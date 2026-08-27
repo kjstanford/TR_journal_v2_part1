@@ -18,26 +18,25 @@
     ]{hyperref}
 
 % --- My Custom Aliases ---
-\newcommand{\Vdd}{V_{\mathrm{DD}}}
-\newcommand{\Vtr}{V_{\mathrm{TR}}}
-\newcommand{\Vt}{V_{\mathrm{T}}}
-\newcommand{\Id}{I_{\mathrm{D}}}
-\newcommand{\Vgs}{V_{\mathrm{GS}}}
-\newcommand{\Ion}{I_{\mathrm{on}}}
-\newcommand{\Ioff}{I_{\mathrm{off}}}
-\newcommand{\SSmin}{SS_{\mathrm{min}}}
+\newcommand{\Vdd}{V_{\text{DD}}}
+\newcommand{\Vtr}{V_{\text{TR}}}
+\newcommand{\Vt}{V_{\text{T}}}
+\newcommand{\Id}{I_{\text{D}}}
+\newcommand{\Vgs}{V_{\text{GS}}}
+\newcommand{\Ion}{I_{\text{on}}}
+\newcommand{\Ioff}{I_{\text{off}}}
+\newcommand{\SSmin}{SS_{\text{min}}}
 
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \markboth{\journalname, VOL. XX, NO. XX, XXXX 2026}
 {Jana \MakeLowercase{\textit{et al.}}: Advancing the Supply Voltage Scalability of Oxide Semiconductor Transistors (XXXX 2026)}
 \begin{document}
-% \title{Advancing the $V_{\mathrm{DD}}$ Scalability of Oxide Semiconductor Transistors through Transition Region Engineering
+% \title{Advancing the $V_{\text{DD}}$ Scalability of Oxide Semiconductor Transistors through Transition Region Engineering
 % }
 \title{Advancing the Supply Voltage Scalability of Oxide Semiconductor Transistors through Transition Region Engineering
 }
 \author{Koustav Jana, \IEEEmembership{Student Member, IEEE}, Jimin Kang, \IEEEmembership{Student Member, IEEE}, Shuhan Liu, \IEEEmembership{Student Member, IEEE}, Chi-Hsin Huang, Swaroop Kommera, Robert K. A. Bennett, Zherui Han, Eric Pop, \IEEEmembership{Fellow, IEEE}, and H.-S. Philip Wong, \IEEEmembership{Fellow, IEEE}
-
 \thanks{This work was supported in part by Microelectronics Commons California-Pacific-Northwest AI Hardware Hub, in part by Semiconductor Research Corporation (SRC) Center for Processing with Intelligent Storage and Memory (PRISM Center), in part by SRC Center for Heterogeneous Integration of Micro Electronic Systems (CHIMES Center), and in part by the Member Companies of Stanford Non-Volatile Memory Technology Research Initiative (NMTRI) and Stanford SystemX Alliance.}
 \thanks{ Koustav Jana, Jimin Kang, Shuhan Liu, Chi-Hsin Huang, Swaroop Kommera, Robert K. A. Bennett, Zherui Han, Eric Pop, and H.-S. Philip Wong, are with the Department of Electrical Engineering, Stanford University, Stanford, CA 94305 USA. (e-mail: kj2011@stanford.edu,  hspwong@stanford.edu). } }
 
@@ -48,7 +47,7 @@
 % The gate voltage transition region (TR) separating the subthreshold and above-threshold regimes represents a critical bottleneck to supply voltage ($\mathbf{V_{DD}}$) scaling in field-effect transistors. This constraint is particularly severe in amorphous oxide semiconductor FETs (a-OSFETs), where shallow traps induce a wide TR width ($\mathbf{V_{TR}}$). Here, we investigate the physical origins of the TR and introduce a robust extraction scheme to quantify $\mathbf{V_{TR}}$, proposing it as an essential figure of merit alongside subthreshold swing and mobility. By identifying and suppressing specific sources of shallow traps, we establish process and device design guidelines that effectively minimize $\mathbf{V_{TR}}$. Furthermore, circuit simulations of gain cell (GC) memory demonstrate that reducing $\mathbf{V_{TR}}$ significantly expands the design space and performance. Ultimately, this work highlights that minimizing $\mathbf{V_{TR}}$ is a prerequisite for enabling a-OSFETs in advanced technology nodes where $\mathbf{V_{DD}}$ scales below 0.7 V.
 
 %% latest abstract below %%
-The gate-voltage transition region (TR) that separates the subthreshold and above-threshold regimes is a critical bottleneck to supply-voltage ($\mathbf{V_{\mathrm{DD}}}$) scaling of field-effect transistors. This constraint is particularly severe in amorphous oxide semiconductor FETs (a-OSFETs), where high densities of shallow traps induce a wide TR width ($\mathbf{V_{\mathrm{TR}}}$). In this work, we investigate the physical origins of the TR and introduce a robust extraction scheme to quantify $\mathbf{V_{\mathrm{TR}}}$, because it is an essential figure of merit alongside subthreshold swing and mobility. By identifying and systematically suppressing specific sources of shallow traps, we establish process and device design guidelines to minimize $\mathbf{V_{\mathrm{TR}}}$. Specifically, we demonstrate in experimental results that $\mathbf{V_{\mathrm{TR}}}$ can be reduced by (a) increasing the indium concentration, (b) increasing the channel thickness, (c) employing gate dielectrics with superior interface quality, and (d) passivating shallow oxygen vacancies by oxygen annealing. Furthermore, we demonstrate $\mathbf{1.72\times}$ reduction in $\mathbf{V_{\mathrm{TR}}}$ using a double-gated a-OSFET compared to its bottom-gated counterpart, confirming that enhanced electrostatic gate control is a highly effective mitigation strategy. This study establishes that minimizing $\mathbf{V_{\mathrm{TR}}}$ is a fundamental prerequisite for deploying a-OSFETs in advanced technology nodes with $\mathbf{V_{\mathrm{DD}} < 0.7}$ V and provides actionable pathways to achieve this goal.
+The gate-voltage transition region (TR) that separates the subthreshold and above-threshold regimes is a critical bottleneck to supply-voltage ($\text{V}_{\text{DD}}$) scaling of field-effect transistors. This constraint is particularly severe in amorphous oxide semiconductor FETs (a-OSFETs), where high densities of shallow traps induce a wide TR width ($\text{V}_{\text{TR}}$). In this work, we investigate the physical origins of the TR and introduce a robust extraction scheme to quantify $\text{V}_{\text{TR}}$, because it is an essential figure of merit alongside subthreshold swing and mobility. By identifying and systematically suppressing specific sources of shallow traps, we establish process and device design guidelines to minimize $\text{V}_{\text{TR}}$. Specifically, we demonstrate in experimental results that $\text{V}_{\text{TR}}$ can be reduced by (a) increasing the indium concentration, (b) increasing the channel thickness, (c) employing gate dielectrics with superior interface quality, and (d) passivating shallow oxygen vacancies by oxygen annealing. Furthermore, we demonstrate $\text{1.72}\times$ reduction in $\text{V}_{\text{TR}}$ using a double-gated a-OSFET compared to its bottom-gated counterpart, confirming that enhanced electrostatic gate control is a highly effective mitigation strategy. This study establishes that minimizing $\text{V}_{\text{TR}}$ is a fundamental prerequisite for deploying a-OSFETs in advanced technology nodes with $\text{V}_{\text{DD}} < \text{0.7}$ V and provides actionable pathways to achieve this goal.
 
 \end{abstract}
 

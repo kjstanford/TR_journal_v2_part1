@@ -1091,33 +1091,115 @@ def plot_gmid_gmcgg(device, VGS, ID, savepath, title, Vg_cv=None, Cgg_cv=None,
 # A windowed OLS slope is used instead of smooth_derivative for this second
 # level.
 #
-# Peak (rising side): centroid of Vg weighted by max(+d(rising)/dVg, 0) over
-# the WHOLE search domain. The rising signal only rises and plateaus over the
-# measured Vg range rather than falling back down, so weighting by its own
-# magnitude would just chase wherever the sweep happens to stop (tested: it
-# moved by ~1 V for a Vg range change of ~1 V) -- but its DERIVATIVE really
-# does decay back to ~0 once the plateau is reached, so a full-domain
-# derivative-weighted centroid is safe and matches extract_VTR closely
-# (tested against both example devices here).
+def _thresholded_lobe_centroid(x, y, extremum_idx, frac, mask):
+    """Weighted centroid of x over the signed lobe of y around `extremum_idx`,
+    using only the contiguous run where |y| stays >= frac * |y[extremum_idx]|
+    AND `mask` is True.
+
+    Bounding the window by a FRACTION OF THE LOBE'S OWN PEAK HEIGHT (rather
+    than a fixed point count, or the whole domain) lets it adapt to how
+    broad or narrow the real feature actually is: a sharp, well-isolated
+    lobe gets a narrow window; a broad one gets a wide window; either way
+    the averaging stays anchored to the actual extremum instead of picking
+    up unrelated structure far away.
+
+    Pathological case this is specifically built to handle (see
+    OSFET_VTR_derivative.png): if the lobe is cut off before decaying to
+    `frac` of its peak on one side -- either by noise flipping the
+    threshold crossing early, or (more commonly here) by simply running
+    into the edge of `mask`, e.g. the noise-floor-trimmed domain boundary
+    sitting close to the trough -- naively using `frac` as-is would give a
+    window whose width on that side is dictated by an arbitrary trimming
+    boundary rather than by the shape of the lobe (and, incidentally, could
+    make the OTHER side's window arbitrarily wider than the constrained
+    side purely because of where the trim happened to fall). Instead, the
+    fraction actually used is `max(frac, implied fraction at whichever
+    side's mask boundary is hit first)` -- i.e. if a boundary would be hit
+    before the lobe decays to `frac` of its peak, the threshold is raised
+    (window narrowed) on BOTH sides to match, so the two sides stay on the
+    same footing. The window can still end up asymmetric in Volts (a
+    genuinely lopsided lobe stays lopsided), but its narrowness is no
+    longer at the mercy of an unrelated trimming boundary.
+    """
+    y = np.asarray(y, dtype=float)
+    sign = 1.0 if y[extremum_idx] >= 0 else -1.0
+    peak = abs(y[extremum_idx])
+    n = len(y)
+
+    def _mask_limit(step):
+        i = extremum_idx
+        while 0 <= i + step < n and mask[i + step] and np.isfinite(y[i + step]):
+            i += step
+        return i
+
+    implied_lo = abs(y[_mask_limit(-1)]) / peak if peak > 0 else 1.0
+    implied_hi = abs(y[_mask_limit(+1)]) / peak if peak > 0 else 1.0
+    eff_frac = min(1.0, max(frac, implied_lo, implied_hi))
+    thresh = eff_frac * peak
+
+    lo = extremum_idx
+    while (lo - 1 >= 0 and mask[lo - 1] and np.isfinite(y[lo - 1])
+           and abs(y[lo - 1]) >= thresh):
+        lo -= 1
+    hi = extremum_idx
+    while (hi + 1 < n and mask[hi + 1] and np.isfinite(y[hi + 1])
+           and abs(y[hi + 1]) >= thresh):
+        hi += 1
+    hi += 1  # exclusive end, for slicing
+
+    w = np.clip(sign * y[lo:hi], 0.0, None)
+    w = np.nan_to_num(w, nan=0.0)
+    xg = x[lo:hi]
+    centroid = np.trapezoid(xg * w, xg) / np.trapezoid(w, xg)
+    return centroid, lo, hi
+
+
+# Both trough and peak now use the SAME fraction-of-peak-height windowed
+# centroid (`_thresholded_lobe_centroid`), replacing two earlier, different
+# treatments:
+#   - The rising side used to average over the WHOLE search domain. That
+#     works when the lobe's derivative genuinely decays to ~0 on the
+#     plateau (as tested for both example devices), but has no way to
+#     adapt if it doesn't.
+#   - The gm/Id trough used to average over a FIXED POINT COUNT around the
+#     argmin, because d(gm/Id)/dVg's negative lobe does NOT decay back to
+#     ~0 the way the rising side's positive lobe does (gm/Id keeps falling
+#     roughly like 1/Vov well past the sharp trough) -- a full-domain
+#     centroid there is dominated by that long tail and lands far from the
+#     true trough (tested: it shifted the Si nFET trough from 0.575 V to
+#     0.69 V, past the rising centroid, making VTR_deriv go NEGATIVE).
+# A fraction-of-peak threshold subsumes both: it naturally narrows around a
+# sharp lobe (like the trough) and widens around a broad one (like the
+# rising side), and -- the point of this version -- it naturally clips
+# itself at the edge of the valid/search domain rather than reaching for
+# data that isn't there, which a fixed full-domain or fixed-point-count
+# window cannot do.
 #
-# Trough (gm/Id side): NOT the same full-domain treatment, even though it
-# looks symmetric on paper. d(gm/Id)/dVg's negative lobe does NOT decay back
-# to ~0 the way the rising side's positive lobe does -- gm/Id itself keeps
-# falling roughly like 1/Vov well past the sharp trough, so its derivative
-# stays measurably negative over a long, slowly-decaying tail. A full-domain
-# centroid there is dominated by that tail and lands far from the true
-# trough (tested: it shifted the Si nFET trough from 0.575 V to 0.69 V --
-# past the rising centroid, making VTR_deriv go NEGATIVE, and moved the OSFET
-# trough from 0.225 V to 0.31 V). Instead, find the sharp argmin first (as
-# the original method did), then take the derivative-weighted centroid in a
-# small window AROUND it (trough_half_width points each side, default
-# window_length) -- this still averages over several points to suppress
-# point-to-point noise, but stays local enough that the long tail can't bias
-# it (tested: <=3 mV from the plain-argmin location for both example
-# devices, vs. 60-115 mV of bias from the full-domain version).
+# trough_frac / peak_frac are separate (not one shared lobe_frac) so the two
+# sides can be tuned independently -- e.g. gm/Id's negative lobe is often
+# expected to tail more than the rising side's positive lobe (gm/Id keeps
+# falling ~1/Vov indefinitely, whereas gm can saturate once the device is
+# fully above threshold), which would argue for a HIGHER trough_frac (tighter
+# window) and a LOWER peak_frac (can afford a looser one since there's
+# supposedly less tail to pick up).
+#
+# CAVEAT, checked against both example devices here before picking defaults:
+# that asymmetry is real for the Si nFET (rising-side drift from its argmax
+# is smaller than the trough's at every frac tested, e.g. ~0.03 V vs ~0.07 V
+# at frac=0.1) but backwards for the OSFET -- its RISING side (gm or
+# gm/Cgg) drifts MUCH more than its trough at every frac tested (~0.5 V vs
+# ~0.14 V at frac=0.1), because the OSFET's above-threshold current keeps
+# curving for ~2 V past the argmax rather than settling into a flat gm the
+# way the Si device does. So "gm doesn't tail" is a per-device property, not
+# a general rule; a lower peak_frac default would make the OSFET case (the
+# one used to motivate the clipped-window fix above) noticeably worse, not
+# better. Both default to 0.5 (half-max, FWHM convention, matching the
+# previous shared-lobe_frac default) until there's a reason to split them
+# for a specific dataset -- pass trough_frac/peak_frac explicitly to tune
+# per-device.
 def extract_VTR_derivative(VGS, ID, Vg_cv=None, Cgg_cv=None, ID_limit=2e-12,
                             window_length=5, polyorder=3, slope_window=None,
-                            edge_margin=None, trough_half_width=None):
+                            edge_margin=None, trough_frac=0.5, peak_frac=0.5):
     VGS = np.asarray(VGS, dtype=float)
     n = len(VGS)
     gm, gm_over_id, rising, rising_kind, valid = compute_gmid_gmcgg(
@@ -1151,53 +1233,48 @@ def extract_VTR_derivative(VGS, ID, Vg_cv=None, Cgg_cv=None, ID_limit=2e-12,
     if not np.any(search_mask):
         search_mask = valid
 
-    # Trough: sharp argmin locates the transition, then a small local
-    # centroid (half-width in points) around it suppresses point noise
-    # without picking up the long negative tail.
-    half_w = trough_half_width if trough_half_width is not None else window_length
-    idx_min = int(np.nanargmin(np.where(search_mask, d_gmid, np.inf)))
-    lo, hi = max(0, idx_min - half_w), min(n, idx_min + half_w + 1)
-    w_trough = np.clip(-d_gmid[lo:hi], 0.0, None)
-    w_trough = np.nan_to_num(w_trough, nan=0.0)
-    Vg_trough = np.trapezoid(VGS[lo:hi] * w_trough, VGS[lo:hi]) / np.trapezoid(w_trough, VGS[lo:hi])
+    idx_trough = int(np.nanargmin(np.where(search_mask, d_gmid, np.inf)))
+    idx_peak = int(np.nanargmax(np.where(search_mask, d_rising, -np.inf)))
 
-    # Centroid of the rising edge: weighted mean of Vg using the positive
-    # part of the rising signal's derivative (over search_mask) as the weight.
-    w_peak = np.where(search_mask, np.clip(d_rising, 0.0, None), 0.0)
-    w_peak = np.nan_to_num(w_peak, nan=0.0)
-    Vg_peak = np.trapezoid(VGS * w_peak, VGS) / np.trapezoid(w_peak, VGS)
+    Vg_trough, lo_t, hi_t = _thresholded_lobe_centroid(
+        VGS, d_gmid, idx_trough, trough_frac, search_mask)
+    Vg_peak, lo_p, hi_p = _thresholded_lobe_centroid(
+        VGS, d_rising, idx_peak, peak_frac, search_mask)
 
     VTR_deriv = Vg_peak - Vg_trough
 
     details = dict(gm=gm, gm_over_id=gm_over_id, rising=rising, rising_kind=rising_kind,
                     d_gmid=d_gmid, d_rising=d_rising, slope_window=sw,
-                    idx_trough=idx_min, trough_window=(lo, hi),
+                    trough_frac=trough_frac, peak_frac=peak_frac,
+                    idx_trough=idx_trough, trough_window=(lo_t, hi_t),
+                    idx_peak=idx_peak, peak_window=(lo_p, hi_p),
                     Vg_trough=Vg_trough, Vg_peak=Vg_peak)
     return VTR_deriv, details
 
 
 def plot_derivative_extrema(device, VGS, VTR_deriv, details, savepath, title):
-    """Diagnostic plot for extract_VTR_derivative: d(gm/Id)/dVg (left, solid,
-    with a small window around its argmin shaded to show what the trough
-    centroid is averaging over -- NOT its whole negative lobe, which has a
-    long tail that would bias the centroid -- see extract_VTR_derivative's
-    comment) and d(gm/Cgg)/dVg or d(gm)/dVg (right, dashed, with its full
-    positive lobe shaded to show what the peak centroid is averaging over)."""
+    """Diagnostic plot for extract_VTR_derivative: d(gm/Id)/dVg (left, solid)
+    and d(gm/Cgg)/dVg or d(gm)/dVg (right, dashed), each with the actual
+    fraction-of-peak-height window used for its centroid shaded -- NOT the
+    whole lobe, which can have a long tail that would bias a full-lobe
+    average (see extract_VTR_derivative's comment and
+    _thresholded_lobe_centroid's docstring for the clipped-window case)."""
     import matplotlib.pyplot as plt
 
     d_gmid, d_rising = details["d_gmid"], details["d_rising"]
     rising_kind = details["rising_kind"]
-    lo, hi = details["trough_window"]
+    lo_t, hi_t = details["trough_window"]
+    lo_p, hi_p = details["peak_window"]
 
     fig, ax_l = plt.subplots(figsize=(6.5, 4.5))
     ax_r = ax_l.twinx()
 
     ax_l.plot(VGS, d_gmid, color=COLOR_GM_ID, lw=2, zorder=3)
-    ax_l.fill_between(VGS[lo:hi], 0, np.clip(d_gmid[lo:hi], None, 0), color=COLOR_GM_ID,
+    ax_l.fill_between(VGS[lo_t:hi_t], 0, np.clip(d_gmid[lo_t:hi_t], None, 0), color=COLOR_GM_ID,
                        alpha=0.12, zorder=2, label="_nolegend_")
     ax_r.plot(VGS, d_rising, color=COLOR_GM_CGG, lw=2, linestyle="--", dashes=(5, 3), zorder=3)
-    ax_r.fill_between(VGS, 0, np.clip(d_rising, 0, None), color=COLOR_GM_CGG, alpha=0.12,
-                       zorder=2, label="_nolegend_")
+    ax_r.fill_between(VGS[lo_p:hi_p], 0, np.clip(d_rising[lo_p:hi_p], 0, None), color=COLOR_GM_CGG,
+                       alpha=0.12, zorder=2, label="_nolegend_")
 
     ax_l.axvline(details["Vg_trough"], color=COLOR_GM_ID, ls=":", lw=1)
     ax_r.axvline(details["Vg_peak"], color=COLOR_GM_CGG, ls=":", lw=1)

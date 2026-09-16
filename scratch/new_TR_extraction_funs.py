@@ -743,6 +743,7 @@ def plot_extraction(VGS, ID, VTON, VTOFF, details, title="", figsize=(11, 4.2)):
     ax1.set_xlabel("$V_{GS}$ (V)")
     ax1.set_ylabel("$\\log_{10}(I_D)$")
     ax1.set_title(f"Subthreshold fit $\\rightarrow$ $V_{{T,off}}$ = {VTOFF:.3f} V")
+    ax1.set_ylim(bottom=-15)
     ax1.legend(fontsize=8, loc="lower right")
 
     # --- Right: on_array vs V_GS -> V_T,on ---------------------------------
@@ -1114,38 +1115,65 @@ def _thresholded_lobe_centroid(x, y, extremum_idx, frac, mask):
     make the OTHER side's window arbitrarily wider than the constrained
     side purely because of where the trim happened to fall). Instead, the
     fraction actually used is `max(frac, implied fraction at whichever
-    side's mask boundary is hit first)` -- i.e. if a boundary would be hit
+    side's boundary is hit first)` -- i.e. if a boundary would be hit
     before the lobe decays to `frac` of its peak, the threshold is raised
     (window narrowed) on BOTH sides to match, so the two sides stay on the
     same footing. The window can still end up asymmetric in Volts (a
     genuinely lopsided lobe stays lopsided), but its narrowness is no
     longer at the mercy of an unrelated trimming boundary.
+
+    "Boundary", for this purpose, means EITHER `mask` going False/non-finite
+    OR the first point where y crosses to the opposite sign of
+    y[extremum_idx] -- i.e. the walk never reaches past a sign change into a
+    neighboring, unrelated lobe. Without that sign check, a noisy
+    already-once-differentiated signal (e.g. d(gm/Id)/dVg computed via a
+    second Savitzky-Golay pass) can oscillate right at the edge of the
+    trimmed/masked domain -- a spurious opposite-sign spike a few points
+    outside the real lobe would otherwise get treated as "the boundary
+    height", forcing `frac` up to ~1.0 and collapsing the window to a
+    single point even though the actual lobe was never clipped at all.
     """
     y = np.asarray(y, dtype=float)
     sign = 1.0 if y[extremum_idx] >= 0 else -1.0
     peak = abs(y[extremum_idx])
     n = len(y)
 
-    def _mask_limit(step):
+    def _same_side(i):
+        return np.isfinite(y[i]) and sign * y[i] > 0
+
+    def _inner_limit(step):
         i = extremum_idx
-        while 0 <= i + step < n and mask[i + step] and np.isfinite(y[i + step]):
+        while 0 <= i + step < n and mask[i + step] and _same_side(i + step):
             i += step
         return i
 
-    implied_lo = abs(y[_mask_limit(-1)]) / peak if peak > 0 else 1.0
-    implied_hi = abs(y[_mask_limit(+1)]) / peak if peak > 0 else 1.0
+    implied_lo = abs(y[_inner_limit(-1)]) / peak if peak > 0 else 1.0
+    implied_hi = abs(y[_inner_limit(+1)]) / peak if peak > 0 else 1.0
     eff_frac = min(1.0, max(frac, implied_lo, implied_hi))
     thresh = eff_frac * peak
 
     lo = extremum_idx
-    while (lo - 1 >= 0 and mask[lo - 1] and np.isfinite(y[lo - 1])
+    while (lo - 1 >= 0 and mask[lo - 1] and _same_side(lo - 1)
            and abs(y[lo - 1]) >= thresh):
         lo -= 1
     hi = extremum_idx
-    while (hi + 1 < n and mask[hi + 1] and np.isfinite(y[hi + 1])
+    while (hi + 1 < n and mask[hi + 1] and _same_side(hi + 1)
            and abs(y[hi + 1]) >= thresh):
         hi += 1
     hi += 1  # exclusive end, for slicing
+
+    # A single-point window (lo == hi-1 == extremum_idx) has zero width, so
+    # its trapezoidal integral is 0/0 -- e.g. when the requested `frac` is
+    # tighter than the Vg step size can resolve (coarsely-sampled data where
+    # even the immediate neighbor has already dropped below `thresh`).
+    # Rather than return NaN, fall back to including one more same-side
+    # neighbor on each side where available, just enough to give the
+    # centroid a non-degenerate interval to integrate over.
+    if hi - lo <= 1:
+        if lo - 1 >= 0 and mask[lo - 1] and _same_side(lo - 1):
+            lo -= 1
+        if hi < n and mask[hi] and _same_side(hi):
+            hi += 1
 
     w = np.clip(sign * y[lo:hi], 0.0, None)
     w = np.nan_to_num(w, nan=0.0)
@@ -1199,7 +1227,8 @@ def _thresholded_lobe_centroid(x, y, extremum_idx, frac, mask):
 # per-device.
 def extract_VTR_derivative(VGS, ID, Vg_cv=None, Cgg_cv=None, ID_limit=2e-12,
                             window_length=5, polyorder=3, slope_window=None,
-                            edge_margin=None, trough_frac=0.5, peak_frac=0.5):
+                            edge_margin=None, gmid_edge_margin=None,
+                            trough_frac=0.9, peak_frac=0.5):
     VGS = np.asarray(VGS, dtype=float)
     n = len(VGS)
     gm, gm_over_id, rising, rising_kind, valid = compute_gmid_gmcgg(
@@ -1207,39 +1236,60 @@ def extract_VTR_derivative(VGS, ID, Vg_cv=None, Cgg_cv=None, ID_limit=2e-12,
 
     sw = slope_window if slope_window is not None else _odd(max(3 * window_length, n // 8))
 
-    # Compute the windowed-OLS slope ONLY over the trimmed (noise-floor
-    # removed) range, same rationale as compute_gmid_gmcgg's own trimming:
-    # rolling_ols_slope sizes its window in units of consecutive ARRAY
-    # entries, so running it on the full NaN-padded array would silently let
-    # a window span across the off-state gap as if those were adjacent,
-    # contiguous samples, rather than consistently using `sw` real
-    # neighboring points on each side.
+    # Compute both derivatives ONLY over the trimmed (noise-floor removed)
+    # range, same rationale as compute_gmid_gmcgg's own trimming: sizing
+    # either derivative in units of consecutive ARRAY entries over the full
+    # NaN-padded array would silently let it span across the off-state gap
+    # as if those were adjacent, contiguous samples.
+    #
+    # d(gm/Id)/dVg uses smooth_derivative (Savitzky-Golay on a resampled
+    # uniform grid) rather than rolling_ols_slope -- gm/Id's trough is sharp
+    # enough that a fixed-length OLS window tends to blunt/shift it, whereas
+    # savgol's polynomial fit tracks the sharp curvature better here.
+    # d(rising)/dVg (gm or gm/Cgg) keeps rolling_ols_slope: that lobe is
+    # broad, so a windowed-OLS slope (built for compounding-noise avoidance
+    # on an already-once-differentiated quantity) still applies well there.
     VGS_v = VGS[valid]
-    d_gmid_v = rolling_ols_slope(VGS_v, gm_over_id[valid], window=sw)
+    d_gmid_v = smooth_derivative(VGS_v, gm_over_id[valid], order=1,
+                                  window_length=window_length, polyorder=polyorder)
     d_rising_v = rolling_ols_slope(VGS_v, rising[valid], window=sw)
     d_gmid = np.full(n, np.nan)
     d_rising = np.full(n, np.nan)
     d_gmid[valid] = d_gmid_v
     d_rising[valid] = d_rising_v
 
-    # Exclude `margin` points from each end of the TRIMMED run -- not the raw
-    # sweep's endpoints (those are off-state and already outside `valid`) --
-    # since that's where rolling_ols_slope's own window-shrinking edge
-    # effects actually live.
-    margin = edge_margin if edge_margin is not None else max(window_length, sw // 2)
-    search_mask_v = _exclude_edges(np.ones(len(VGS_v), dtype=bool), len(VGS_v), margin)
-    search_mask = np.zeros(n, dtype=bool)
-    search_mask[valid] = search_mask_v
-    if not np.any(search_mask):
-        search_mask = valid
+    # Exclude a margin from each end of the TRIMMED run -- not the raw
+    # sweep's endpoints (those are off-state and already outside `valid`).
+    # The two derivatives get INDEPENDENT margins because they come from
+    # different edge-effect sources: `d_rising` uses rolling_ols_slope,
+    # whose window genuinely shrinks near the ends, with effects felt out to
+    # ~sw/2 points in. `d_gmid` uses smooth_derivative (a single
+    # Savitzky-Golay pass), whose edge effects are confined to roughly
+    # window_length/2 points -- much smaller than `sw`. Sharing the
+    # rolling_ols_slope-sized margin for BOTH (as before) could exclude a
+    # genuine, sharp gm/Id trough that happens to sit close to where the
+    # noise-floor trim starts, forcing the search onto the decay tail
+    # instead of the real feature (seen on device "1_1_3": true trough at
+    # Vg=0.70 V was masked out, landing the centroid at 0.92 V instead).
+    margin_rising = edge_margin if edge_margin is not None else max(window_length, sw // 2)
+    margin_gmid = gmid_edge_margin if gmid_edge_margin is not None else window_length // 2
 
-    idx_trough = int(np.nanargmin(np.where(search_mask, d_gmid, np.inf)))
-    idx_peak = int(np.nanargmax(np.where(search_mask, d_rising, -np.inf)))
+    def _search_mask(margin):
+        mask_v = _exclude_edges(np.ones(len(VGS_v), dtype=bool), len(VGS_v), margin)
+        mask = np.zeros(n, dtype=bool)
+        mask[valid] = mask_v
+        return mask if np.any(mask) else valid
+
+    search_mask_gmid = _search_mask(margin_gmid)
+    search_mask_rising = _search_mask(margin_rising)
+
+    idx_trough = int(np.nanargmin(np.where(search_mask_gmid, d_gmid, np.inf)))
+    idx_peak = int(np.nanargmax(np.where(search_mask_rising, d_rising, -np.inf)))
 
     Vg_trough, lo_t, hi_t = _thresholded_lobe_centroid(
-        VGS, d_gmid, idx_trough, trough_frac, search_mask)
+        VGS, d_gmid, idx_trough, trough_frac, search_mask_gmid)
     Vg_peak, lo_p, hi_p = _thresholded_lobe_centroid(
-        VGS, d_rising, idx_peak, peak_frac, search_mask)
+        VGS, d_rising, idx_peak, peak_frac, search_mask_rising)
 
     VTR_deriv = Vg_peak - Vg_trough
 

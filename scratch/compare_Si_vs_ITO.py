@@ -7,7 +7,7 @@ script_dir = Path(__file__).parent.resolve()
 data_dir = script_dir / "paper_data" / "compare_Si_vs_ITO"
 
 T = 300  # Temperature in Kelvin
-common_kwargs = dict(off_frac=1e-3, on_frac=0.2, window_length=5, npts_fit=5, VOV_limit=4.0, ID_limit=2e-12)
+common_kwargs = dict(off_frac=1e-3, on_frac=0.2, window_length=5, npts_fit=3, VOV_limit=4.0, ID_limit=2e-12)
 
 extracted_list = []
 
@@ -48,12 +48,13 @@ def extract_and_report(device, file_name, VGS_full, ID_full, VDS_full, label_suf
             "VTR": VTR,
         }
     )
+    return VTON, VTOFF, VTR, det
 
 
 # ---------------------------------------------------------------------------
 # Si nFET
 # ---------------------------------------------------------------------------
-si_file = data_dir / "nFET_IdVg_Vdpar [dev5_100_100_pre(1) ; 3_30_2025 3_57_31 PM].csv"
+si_file = data_dir / "nFET_IdVg_Vdpar [dev8_10_5_post(1) ; 3_31_2025 2_55_14 PM].csv"
 df_list, N1 = agilent_csv_cleaner(si_file)
 print(f"Processed {si_file.name} into {len(df_list)} dataset{('s' if len(df_list) != 1 else '')}.")
 
@@ -61,7 +62,8 @@ df = df_list[0]
 VGS_full = df[' Vg'].to_numpy()
 ID_full = df[' absId'].to_numpy()
 VDS_full = df[' Vd'].to_numpy()
-extract_and_report("Si nFET", si_file.name, VGS_full, ID_full, VDS_full)
+si_VTON_lin, si_VTOFF_lin, si_VTR_lin, si_det_lin = extract_and_report(
+    "Si nFET", si_file.name, VGS_full, ID_full, VDS_full)
 
 # ---------------------------------------------------------------------------
 # OSFET
@@ -73,12 +75,16 @@ print(f"Processed {os_file.name} into {len(df_list)} dataset{('s' if len(df_list
 # Each measured block sweeps Vg at two Vd levels (0.05 V, 1.5 V); VTR
 # extraction requires the linear-mode (low VDS) sweep, so only the
 # low-VDS dataset from each block is used (df_list[0::2]).
+os_block0_lin = None
 for block_idx, df in enumerate(df_list[0::2]):
     VGS_full = df[' Vg'].to_numpy()
     ID_full = df[' absId'].to_numpy()
     VDS_full = df[' Vd'].to_numpy()
-    extract_and_report("OSFET", os_file.name, VGS_full, ID_full, VDS_full,
-                        label_suffix=f" block{block_idx}")
+    result = extract_and_report("OSFET", os_file.name, VGS_full, ID_full, VDS_full,
+                                 label_suffix=f" block{block_idx}")
+    if block_idx == 0:
+        os_block0_lin = result
+os_VTON_lin, os_VTOFF_lin, os_VTR_lin, os_det_lin = os_block0_lin
 
 extracted_df = pd.DataFrame(extracted_list)
 extracted_df.to_csv(script_dir / "compare_Si_vs_ITO_extracted.csv", index=False)
@@ -210,3 +216,78 @@ print("\nVTR from derivative extrema (gm/Cgg rising-edge centroid - gm/Id trough
 print(VTR_deriv_df.to_string(index=False))
 print("\nFor comparison, VTR from extract_VTR (raw ID, subthreshold/above-threshold extrapolation):")
 print(extracted_df[["device", "file_name", "VTR"]].to_string(index=False))
+
+# ---------------------------------------------------------------------------
+# Excel export: raw sweeps + gm/Id, gm/Cgg diagnostics (one sheet per
+# device) plus a summary sheet of every extracted V_T/V_TR variant.
+# ---------------------------------------------------------------------------
+# rising_kind is "gm" (not "gm/Cgg") in si_det/os_det whenever Cgg data isn't
+# supplied -- both devices here DO supply Cgg, so si_det/os_det already hold
+# the gm/Cgg-based rising centroid (VT_gm_by_cgg). A second, Cgg-free pass
+# is needed to also get the plain-gm-based rising centroid (VT_gm), since
+# extract_VTR_derivative only computes one "rising" variant per call.
+si_VTR_deriv_gm, si_det_gm = extract_VTR_derivative(si_VGS, si_ID)
+os_VTR_deriv_gm, os_det_gm = extract_VTR_derivative(os_VGS, os_ID)
+
+
+def _device_sheet(VGS, ID, Vg_cv, Cgg_cv, det, det_gm):
+    """One sheet's worth of columns for a device: the raw sweep, the CV
+    sweep (possibly a different length/grid -- padded with NaN via
+    pd.concat's index-aligned join, not interpolated, so the sheet mirrors
+    the actual as-measured data), and every curve plotted by
+    plot_derivative_extrema / plot_gm_and_gmid (gm/Id and its derivative,
+    plus BOTH rising-side variants: gm/Cgg and plain gm, and their
+    derivatives)."""
+    cols = {
+        "VGS (V)": pd.Series(VGS),
+        "ID (A)": pd.Series(ID),
+        "Vg_cv (V)": pd.Series(Vg_cv),
+        "Cgg_cv (F)": pd.Series(Cgg_cv),
+        "gm (S)": pd.Series(det["gm"]),
+        "gm_over_id (1/V)": pd.Series(det["gm_over_id"]),
+        "d(gm_over_id)/dVg (1/V^2)": pd.Series(det["d_gmid"]),
+        "gm_over_cgg (1/s)": pd.Series(det["rising"]),
+        "d(gm_over_cgg)/dVg (1/(s*V))": pd.Series(det["d_rising"]),
+        "d(gm)/dVg (S/V)": pd.Series(det_gm["d_rising"]),
+    }
+    return pd.concat(cols, axis=1)
+
+
+def _summary_row(device, VTON, VTOFF, VTR, det, det_gm):
+    return {
+        "device": device,
+        "VTON (V)": VTON,
+        "VTOFF (V)": VTOFF,
+        "VTR (V)": VTR,
+        "VTR_deriv_gm_over_cgg (V)": det["Vg_peak"] - det["Vg_trough"],
+        "VTR_deriv_gm (V)": det_gm["Vg_peak"] - det_gm["Vg_trough"],
+        "VT_gm_by_id (V)": det["Vg_trough"],
+        "VT_gm_by_cgg (V)": det["Vg_peak"],
+        "VT_gm (V)": det_gm["Vg_peak"],
+        "window_length": common_kwargs["window_length"],
+        "polyorder": 3,
+        "npts_fit": common_kwargs["npts_fit"],
+        "off_frac": common_kwargs["off_frac"],
+        "on_frac": common_kwargs["on_frac"],
+        "VOV_limit": common_kwargs["VOV_limit"],
+        "ID_limit": common_kwargs["ID_limit"],
+        "trough_frac": det["trough_frac"],
+        "peak_frac": det["peak_frac"],
+        "slope_window": det["slope_window"],
+    }
+
+
+summary_df = pd.DataFrame([
+    _summary_row("Si nFET", si_VTON_lin, si_VTOFF_lin, si_VTR_lin, si_det, si_det_gm),
+    _summary_row("OSFET", os_VTON_lin, os_VTOFF_lin, os_VTR_lin, os_det, os_det_gm),
+])
+
+excel_path = script_dir / "compare_Si_vs_ITO_data.xlsx"
+with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
+    _device_sheet(si_VGS, si_ID, si_Vg_cv, si_Cgg_cv, si_det, si_det_gm).to_excel(
+        writer, sheet_name="Si nFET", index=False)
+    _device_sheet(os_VGS, os_ID, os_Vg_cv, os_Cgg_cv, os_det, os_det_gm).to_excel(
+        writer, sheet_name="OSFET", index=False)
+    summary_df.to_excel(writer, sheet_name="Summary", index=False)
+
+print(f"\nSaved combined data + summary workbook to {excel_path}")

@@ -35,7 +35,7 @@ ID_LIMIT = 1e-13  # model has no measurement noise; this just keeps the very
                    # deepest (numerically negligible) subthreshold tail out
                    # of the SS/gm-Id search, same role as extract_VTR's ID_limit
 
-VG_MIN, VG_MAX, N_VG = -0.25, 1.5, 201
+VG_MIN, VG_MAX, N_VG = -0.5, 3.0, 201
 VGS = np.linspace(VG_MIN, VG_MAX, N_VG)
 
 # ---------------------------------------------------------------------------
@@ -45,8 +45,8 @@ VGS = np.linspace(VG_MIN, VG_MAX, N_VG)
 p = TRParams()
 cases = make_cases(p, [
     ("Vtr0", {"Vtr": 0.0}),
-    ("Vtr0.3_phitail0.045", {"Vtr": 0.3, "phi_tail": 0.045}),
-    ("Vtr0.3_phitail0.09", {"Vtr": 0.3, "phi_tail": 0.09}),
+    ("Vtr0.9_phitail0.045", {"Vtr": 0.9, "phi_tail": 0.045}),
+    ("Vtr0.9_phitail0.06", {"Vtr": 0.9, "phi_tail": 0.06}),
 ])
 
 common_kwargs = dict(off_frac=1e-3, on_frac=0.2, window_length=5, npts_fit=5,

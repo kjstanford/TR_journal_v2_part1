@@ -7,12 +7,12 @@ from new_TR_extraction_funs import *
 
 script_dir = Path(__file__).parent.resolve()
 
-compiled_csv_path = script_dir / "ITO_t2nm_L2um_W100um_compiled.csv"
+compiled_csv_path = script_dir / "ITO_t2nm_L5um_W100um_compiled.csv"
 
 if not compiled_csv_path.exists():
     print(f"Compiled CSV file {compiled_csv_path} does not exist. Creating it now.")
 
-    baseline_dir = script_dir / "paper_data" / "ITO_t2nm_L25um_W100um"
+    baseline_dir = script_dir / "paper_data" / "ITO_t2nm_L5um_W100um"
 
     baseline_main_csvs = [f for f in os.listdir(baseline_dir) if f.endswith(".csv") and f.startswith("IdVg_main_")]
     print(f"Found {len(baseline_main_csvs)} baseline main CSV files.") 
@@ -72,7 +72,7 @@ for col_idx, col_name in enumerate(compiled_df.columns):
     print(f"Loaded {len(VGS)} VGS values and {len(ID)} ID values for device ID: {col_name.strip('_Vg')}")
     print(f"VGS: {VGS.min():.3f} to {VGS.max():.3f} V\n")
 
-    common_kwargs = dict(off_frac=1e-3, on_frac=0.2, window_length=5, npts_fit=5, VOV_limit=4.0, ID_limit=2e-12)
+    common_kwargs = dict(off_frac=1e-3, on_frac=0.2, window_length=5, npts_fit=3, VOV_limit=4.0, ID_limit=2e-12)
 
     label, kwargs = "No R correction (raw ID)", dict(correct_series_R=False)
     VTON, VTOFF, VTR, det = extract_VTR(VGS, ID, VDS, T=T, return_details=True, **common_kwargs, **kwargs)

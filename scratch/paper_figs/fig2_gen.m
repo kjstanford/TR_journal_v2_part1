@@ -51,20 +51,26 @@ os_mask = gm_by_Id_OS_nFET <= log(10) / 0.06 & gm_by_Id_OS_nFET > log(10) / 0.2;
 si_mask = gm_by_Id_Si_nFET <= log(10) / 0.06 & gm_by_Id_Si_nFET > log(10) / 0.2;
 
 ax.FontSize = min(fig2a.Position(3), fig2a.Position(4)) / 20;
-% 'Helvetica' isn't installed as an actual font file on this system --
-% MATLAB's SVG export hardcodes whatever FontName is set here literally
-% into the file, so a non-installed name forces every SVG viewer to
-% substitute its own fallback (with its own metrics), causing text to
-% render at a different size/proportion than the PNG, or not at all in
-% stricter viewers. 'DejaVu Sans' is actually installed here, so the SVG
-% and PNG stay visually consistent everywhere (see fig_1_2.m for the
-% full writeup of this issue).
+% MATLAB's SVG export hardcodes font-family="Helvetica" regardless of
+% what FontName is set to here or what actually rendered the PNG (verified
+% empirically -- Helvetica/Arial/Trebuchet MS/Nimbus Sans all produce
+% pixel-identical PNGs and the same SVG tag on this system), so this is
+% purely documentation of intent for the SVG's declared font-family; it
+% has no effect on the PNG or on layout/kerning.
 ax.FontName = 'Helvetica';
 
 plot(ax, Id_OS_norm(os_mask), 1000 * log(10) ./ gm_by_Id_OS_nFET(os_mask), 'LineWidth', 3.5, 'Color', [0 0 1], 'Marker', 'o', 'MarkerSize', 8, 'MarkerFaceColor', [0 0 1]);
 plot(ax, Id_Si_norm(si_mask), 1000 * log(10) ./ gm_by_Id_Si_nFET(si_mask), 'LineWidth', 3.5, 'Color', [1 0 0], 'Marker', 's', 'MarkerSize', 8, 'MarkerFaceColor', [1 0 0]);
 
-xlabel(ax, {'I_{D}', '[normalized]'}, 'FontWeight', 'bold');
+% MATLAB's SVG export of 'tex'-interpreted subscripts (I_{D}) bakes in a
+% fixed subscript offset instead of real glyph-width kerning, so the "D"
+% sits with a visibly wider gap after "I" in the SVG than in the PNG
+% (where on-screen/raster text layout uses actual font metrics). The
+% 'latex' interpreter lays subscripts out properly in both, at the cost
+% of falling back to a bold serif (Computer Modern) font for the math
+% part instead of the bold DejaVu Sans used elsewhere -- MATLAB's LaTeX
+% interpreter doesn't support a sans-serif math font (cmss is rejected).
+xlabel(ax, {'$\mathbf{I_D}$', '\textbf{[normalized]}'}, 'Interpreter', 'latex');
 ylabel(ax, {'SS', '[mV/dec]'}, 'FontWeight', 'bold');
 
 % ax.YTickLabel = [];  % keep the y-axis numberless, but (unlike yticks(ax,[]))
@@ -103,20 +109,18 @@ ax = axes(fig2);
 hold(ax, 'on');
 
 ax.FontSize = min(fig2.Position(3), fig2.Position(4)) / 20;
-% 'Helvetica' isn't installed as an actual font file on this system --
-% MATLAB's SVG export hardcodes whatever FontName is set here literally
-% into the file, so a non-installed name forces every SVG viewer to
-% substitute its own fallback (with its own metrics), causing text to
-% render at a different size/proportion than the PNG, or not at all in
-% stricter viewers. 'DejaVu Sans' is actually installed here, so the SVG
-% and PNG stay visually consistent everywhere (see fig_1_2.m for the
-% full writeup of this issue).
+% MATLAB's SVG export hardcodes font-family="Helvetica" regardless of
+% what FontName is set to here or what actually rendered the PNG (verified
+% empirically -- Helvetica/Arial/Trebuchet MS/Nimbus Sans all produce
+% pixel-identical PNGs and the same SVG tag on this system), so this is
+% purely documentation of intent for the SVG's declared font-family; it
+% has no effect on the PNG or on layout/kerning.
 ax.FontName = 'Helvetica';
 plot(ax, Vg_OS_nFET, gm_OS_nFET_norm, 'LineWidth', 3.5, 'Color', [0 0 1]);
 plot(ax, Vg_Si_nFET, gm_Si_nFET_norm, 'LineWidth', 3.5, 'Color', [1 0 0]);
 
-xlabel(ax, 'V_{GS} [V]', 'FontWeight', 'bold');
-ylabel(ax, {'\mu_{FE}', '[normalized]'}, 'FontWeight', 'bold');
+xlabel(ax, '$\mathbf{V_{GS}}$ \textbf{[V]}', 'Interpreter', 'latex');
+ylabel(ax, {'$\mathbf{\mu_{FE}}$', '\textbf{[normalized]}'}, 'Interpreter', 'latex');
 
 % ax.YTickLabel = [];  % keep the y-axis numberless, but (unlike yticks(ax,[]))
 %                       % leave the tick positions themselves in place so

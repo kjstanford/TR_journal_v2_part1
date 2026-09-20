@@ -1,0 +1,1 @@
+xvfb-run -a matlab -nosplash -nodesktop -r "try, ${1}_gen; fig_to_svg('$1'); fig_to_png('$1'); catch e, disp(getReport(e)); end; exit"

@@ -50,14 +50,14 @@ Id_Si_norm = abs(Id_Si_nFET) ./ max(gm_Si_nFET);
 os_mask = gm_by_Id_OS_nFET <= log(10) / 0.06 & gm_by_Id_OS_nFET > log(10) / 0.2;
 si_mask = gm_by_Id_Si_nFET <= log(10) / 0.06 & gm_by_Id_Si_nFET > log(10) / 0.2;
 
-ax.FontSize = min(fig2a.Position(3), fig2a.Position(4)) / 20;
+ax.FontSize = min(fig2a.Position(3), fig2a.Position(4)) / 18;
 % MATLAB's SVG export hardcodes font-family="Helvetica" regardless of
 % what FontName is set to here or what actually rendered the PNG (verified
 % empirically -- Helvetica/Arial/Trebuchet MS/Nimbus Sans all produce
 % pixel-identical PNGs and the same SVG tag on this system), so this is
 % purely documentation of intent for the SVG's declared font-family; it
 % has no effect on the PNG or on layout/kerning.
-ax.FontName = 'Helvetica';
+ax.FontName = 'Arial';
 
 plot(ax, Id_OS_norm(os_mask), 1000 * log(10) ./ gm_by_Id_OS_nFET(os_mask), 'LineWidth', 3.5, 'Color', [0 0 1], 'Marker', 'o', 'MarkerSize', 8, 'MarkerFaceColor', [0 0 1]);
 plot(ax, Id_Si_norm(si_mask), 1000 * log(10) ./ gm_by_Id_Si_nFET(si_mask), 'LineWidth', 3.5, 'Color', [1 0 0], 'Marker', 's', 'MarkerSize', 8, 'MarkerFaceColor', [1 0 0]);
@@ -70,8 +70,8 @@ plot(ax, Id_Si_norm(si_mask), 1000 * log(10) ./ gm_by_Id_Si_nFET(si_mask), 'Line
 % of falling back to a bold serif (Computer Modern) font for the math
 % part instead of the bold DejaVu Sans used elsewhere -- MATLAB's LaTeX
 % interpreter doesn't support a sans-serif math font (cmss is rejected).
-xlabel(ax, {'$\mathbf{I_D}$', '\textbf{[normalized]}'}, 'Interpreter', 'latex');
-ylabel(ax, {'SS', '[mV/dec]'}, 'FontWeight', 'bold');
+xlabel(ax, {'I_D [normalized]'}, 'FontWeight', 'bold');
+ylabel(ax, {'SS [mV/dec]'}, 'FontWeight', 'bold');
 
 % ax.YTickLabel = [];  % keep the y-axis numberless, but (unlike yticks(ax,[]))
 %                       % leave the tick positions themselves in place so
@@ -103,42 +103,4 @@ set(ax, 'Color', 'none');
 
 savefig(fig2a, fullfile(scriptDir, 'fig2a.fig'));
 
-%% Figure 2b: Plot muFE (\propto gm) vs. Vg for OS nFET vs. Si nFET
-fig2 = figure('Name','muFE_vs_Vg_Si_vs_OS_nFET', 'Visible', 'off', 'Position', [100 100 420 450]);
-ax = axes(fig2);
-hold(ax, 'on');
-
-ax.FontSize = min(fig2.Position(3), fig2.Position(4)) / 20;
-% MATLAB's SVG export hardcodes font-family="Helvetica" regardless of
-% what FontName is set to here or what actually rendered the PNG (verified
-% empirically -- Helvetica/Arial/Trebuchet MS/Nimbus Sans all produce
-% pixel-identical PNGs and the same SVG tag on this system), so this is
-% purely documentation of intent for the SVG's declared font-family; it
-% has no effect on the PNG or on layout/kerning.
-ax.FontName = 'Helvetica';
-plot(ax, Vg_OS_nFET, gm_OS_nFET_norm, 'LineWidth', 3.5, 'Color', [0 0 1]);
-plot(ax, Vg_Si_nFET, gm_Si_nFET_norm, 'LineWidth', 3.5, 'Color', [1 0 0]);
-
-xlabel(ax, '$\mathbf{V_{GS}}$ \textbf{[V]}', 'Interpreter', 'latex');
-ylabel(ax, {'$\mathbf{\mu_{FE}}$', '\textbf{[normalized]}'}, 'Interpreter', 'latex');
-
-% ax.YTickLabel = [];  % keep the y-axis numberless, but (unlike yticks(ax,[]))
-%                       % leave the tick positions themselves in place so
-%                       % major/minor tick marks below still have something
-%                       % to draw
-ylim(ax, [0 1.05]);
-yticks(ax, []);
-
-ax.FontWeight = "bold";
-ax.LineWidth = 3.5;
-ax.Box = 'on';
-ax.XAxis.MinorTick = 'on';
-% ax.YAxis.MinorTick = 'on';
-ax.TickLength = [0.025 0.025];  % taller major ticks (default ~[0.01 0.025]);
-                                 % minor ticks scale proportionally shorter
-
-set(ax, 'LooseInset', max(get(ax,'TightInset'), 0.02))
-set(gcf, 'Color', 'none');
-set(ax, 'Color', 'none');
-
-savefig(fig2, fullfile(scriptDir, 'fig2b.fig'));
+exportgraphics(fig2a, fullfile(scriptDir, 'fig2a.pdf'), 'ContentType', 'vector');

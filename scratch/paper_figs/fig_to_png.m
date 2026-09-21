@@ -14,7 +14,7 @@ function fig_to_png(figPath)
     % default 'tight' padding crops to the bounding box of actually
     % rendered ink, silently discarding deliberate blank space (e.g. a
     % margin reserved via an invisible/transparent placeholder label).
-    exportgraphics(fig, pngPath, 'Padding', 'figure');
+    exportgraphics(fig, pngPath, 'Padding', 'figure', 'Resolution', 300);
     close(fig);
 
     fprintf('Saved %s\n', pngPath);

@@ -52,7 +52,7 @@ ax.FontSize = min(fig2.Position(3), fig2.Position(4)) / 18;
 % purely documentation of intent for the SVG's declared font-family; it
 % has no effect on the PNG or on layout/kerning.
 ax.FontName = 'Helvetica';
-plot(ax, Vg_OS_nFET, gm_OS_nFET_norm, 'LineWidth', 3.5, 'Color', [0 0 1]);
+plot(ax, Vg_OS_nFET+0.15, gm_OS_nFET_norm, 'LineWidth', 3.5, 'Color', [0 0 1]);
 plot(ax, Vg_Si_nFET, gm_Si_nFET_norm, 'LineWidth', 3.5, 'Color', [1 0 0]);
 
 xlabel(ax, {'V_{GS} [V]'}, 'FontWeight', 'bold');
@@ -64,6 +64,7 @@ ylabel(ax, {'\mu_{FE}', '[normalized]'}, 'FontWeight', 'bold');
 %                       % to draw
 ylim(ax, [0 1.05]);
 yticks(ax, []);
+xlim(ax, [0 3]);
 
 ax.FontWeight = "bold";
 ax.LineWidth = 3.5;

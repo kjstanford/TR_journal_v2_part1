@@ -68,6 +68,24 @@ for file in data_dir.iterdir():
         except ImportError:
             pass
 
+        # Alternative VTR: Vg-separation between the 50%-of-max crossing of
+        # gm/Id and of the rising signal -- here rising falls back to plain
+        # gm (no CV/Cgg data for this device set), see
+        # extract_VTR_gm_gmid's docstring in new_TR_extraction_funs.py.
+        VTR_gm_gmid, det_gm_gmid = extract_VTR_gm_gmid(VGS, ID, ID_limit=2e-12,
+                                                        window_length=5)
+        print(f"{'VTR from gm/Id, gm crossings':35s}: VTR_gm_gmid={VTR_gm_gmid:.3f} V  "
+              f"(VT_gm_over_id={det_gm_gmid['VT_gm_over_id']:.3f} V, "
+              f"VT_rising={det_gm_gmid['VT_rising']:.3f} V, rising={det_gm_gmid['rising_kind']})")
+
+        try:
+            plot_gm_and_gmid_norm(file.stem, VGS, det_gm_gmid,
+                                   data_dir / f"{file.stem}_gm_and_gmid_norm.png",
+                                   f"{file.stem}: gm and gm/Id (normalized)",
+                                   VTR_gm_gmid=VTR_gm_gmid, gm_gmid_details=det_gm_gmid)
+        except ImportError:
+            pass
+
         extracted_list.append(
             {
                 "file_name": file.name,
@@ -76,6 +94,7 @@ for file in data_dir.iterdir():
                 "VTOFF": VTOFF,
                 "VTR": VTR,
                 "VTR_deriv": VTR_deriv,
+                "VTR_gm_gmid": VTR_gm_gmid,
             }
         )
 
@@ -87,11 +106,18 @@ extracted_df.to_csv(script_dir / "EE312_Si_nFET_extracted.csv", index=False)
 
 print("Statistics of extracted VTR values:")
 vtr_stats = extracted_df['VTR'].describe()
+print(f"VTR values: {[float(f'{v:.4f}') for v in extracted_df['VTR'].to_numpy()]}")
 print(vtr_stats)
 
 print("\nStatistics of extracted VTR_deriv values (gm/Id trough - gm centroid):")
 vtr_deriv_stats = extracted_df['VTR_deriv'].describe()
+print(f"VTR_deriv values: {[float(f'{v:.4f}') for v in extracted_df['VTR_deriv'].to_numpy()]}")
 print(vtr_deriv_stats)
+
+print("\nStatistics of extracted VTR_gm_gmid values (gm/Id 50% - gm 50% crossings):")
+vtr_gm_gmid_stats = extracted_df['VTR_gm_gmid'].describe()
+print(f"VTR_gm_gmid values: {[float(f'{v:.4f}') for v in extracted_df['VTR_gm_gmid'].to_numpy()]}")
+print(vtr_gm_gmid_stats)
 
 try:
     import matplotlib.pyplot as plt
@@ -118,5 +144,19 @@ try:
     fig.savefig(hist_path_deriv, dpi=150)
     plt.close(fig)
     print(f"Saved VTR_deriv histogram to {hist_path_deriv}")
+except ImportError:
+    pass
+
+try:
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    ax.hist(extracted_df['VTR_gm_gmid'], bins=20, edgecolor="black")
+    ax.set_xlabel("VTR_gm_gmid (V)")
+    ax.set_ylabel("Count")
+    ax.set_title("Histogram of VTR_gm_gmid values")
+    hist_path_gm_gmid = data_dir / "VTR_gm_gmid_histogram.png"
+    fig.savefig(hist_path_gm_gmid, dpi=150)
+    plt.close(fig)
+    print(f"Saved VTR_gm_gmid histogram to {hist_path_gm_gmid}")
 except ImportError:
     pass

@@ -40,14 +40,14 @@ gm_Si_nFET_norm = gm_Si_nFET ./ max(gm_Si_nFET);
 Wsi = 10e-6; Lsi = 5e-6; Vds = 0.1;
 
 %% Figure 2c: Plot Id vs. Vg for OS nFET vs. Si nFET log scale on left y-axis, linear scale on right y-axis
-fig2c = figure('Name','Id_vs_Vg_Si_vs_OS_nFET', 'Visible', 'off', 'Position', [100 100 550 450]);
+fig2c = figure('Name','Id_vs_Vg_Si_vs_OS_nFET', 'Visible', 'off', 'Position', [100 100 700 450]);
 ax = axes(fig2c);
 hold(ax, 'on');
 
 Id_OS_norm = abs(Id_OS_nFET) ./ max(gm_OS_nFET);
 Id_Si_norm = abs(Id_Si_nFET) ./ max(gm_Si_nFET);
 
-ax.FontSize = min(fig2c.Position(3), fig2c.Position(4)) / 18;
+ax.FontSize = min(fig2c.Position(3), fig2c.Position(4)) / 20;
 % MATLAB's SVG export hardcodes font-family="Helvetica" regardless of
 % what FontName is set to here or what actually rendered the PNG (verified
 % empirically -- Helvetica/Arial/Trebuchet MS/Nimbus Sans all produce
@@ -56,22 +56,29 @@ ax.FontSize = min(fig2c.Position(3), fig2c.Position(4)) / 18;
 % has no effect on the PNG or on layout/kerning.
 ax.FontName = 'Arial';
 
+yliml = Id_Si_norm(Vg_Si_nFET == 0);
+ylimh = 100 * Id_Si_norm(Vg_Si_nFET == 2);
+
 yyaxis(ax, 'left');
 ax.YScale = 'log';
-plot(ax, Vg_OS_nFET, Id_OS_norm, 'LineWidth', 3.5, 'Color', [0 0 1]);
-plot(ax, Vg_Si_nFET, Id_Si_norm, 'LineWidth', 3.5, 'Color', [1 0 0]);
-ylabel(ax, 'I_D [normalized] (log)', 'FontWeight', 'bold');
+plot(ax, Vg_OS_nFET+0.15, Id_OS_norm, 'LineWidth', 3.5, 'Color', [0 0 1], 'LineStyle', '-');
+plot(ax, Vg_Si_nFET, Id_Si_norm, 'LineWidth', 3.5, 'Color', [1 0 0], 'LineStyle', '-');
+ylabel(ax, {'I_D', '[normalized]'}, 'FontWeight', 'bold');
 ax.YColor = [0 0 0];
 yticks(ax, []);
+ylim(ax, [yliml ylimh]);
+
+patch(ax, [0.47 0.55 0.55 0.47], [ax.YLim(1) ax.YLim(1) ax.YLim(2) ax.YLim(2)], [1 0 0], 'FaceAlpha', 0.25, 'EdgeColor', 'none');
+patch(ax, [0.4 1.14 1.14 0.4], [ax.YLim(1) ax.YLim(1) ax.YLim(2) ax.YLim(2)], [0 0 1], 'FaceAlpha', 0.25, 'EdgeColor', 'none');
 
 yyaxis(ax, 'right');
-plot(ax, Vg_OS_nFET, Id_OS_norm, 'LineWidth', 3.5, 'Color', [0 0 1]);
-plot(ax, Vg_Si_nFET, Id_Si_norm, 'LineWidth', 3.5, 'Color', [1 0 0]);
+plot(ax, Vg_OS_nFET+0.15, Id_OS_norm, 'LineWidth', 3.5, 'Color', [0 0 1], 'LineStyle', '-');
+plot(ax, Vg_Si_nFET, Id_Si_norm, 'LineWidth', 3.5, 'Color', [1 0 0], 'LineStyle', '-');
 ax.YColor = [0 0 0];
-ylim(ax, [0 1.05]);
 yticks(ax, []);
 
 xlabel(ax, {'V_{GS} [V]'}, 'FontWeight', 'bold');
+xlim(ax, [0 2]);
 
 ax.FontWeight = "bold";
 ax.LineWidth = 3.5;

@@ -7,7 +7,7 @@ from new_TR_extraction_funs import *
 
 script_dir = Path(__file__).parent.resolve()
 
-compiled_csv_path = script_dir / "ITO_t2nm_L5um_W100um_compiled.csv"
+compiled_csv_path = script_dir / "ITO_t2nm_L2um_W100um_compiled.csv"
 
 if not compiled_csv_path.exists():
     print(f"Compiled CSV file {compiled_csv_path} does not exist. Creating it now.")
@@ -52,8 +52,10 @@ compiled_df = pd.read_csv(compiled_csv_path)
 
 VDS = 0.05
 T = 300.0
+device_list = []
 VTR_list = []
 VTR_deriv_list = []
+VTR_gm_gmid_list = []
 
 for col_idx, col_name in enumerate(compiled_df.columns):
     # ["1_1_1", "1_1_2", "1_0_2"] for L = 2um
@@ -76,6 +78,7 @@ for col_idx, col_name in enumerate(compiled_df.columns):
 
     label, kwargs = "No R correction (raw ID)", dict(correct_series_R=False)
     VTON, VTOFF, VTR, det = extract_VTR(VGS, ID, VDS, T=T, return_details=True, **common_kwargs, **kwargs)
+    device_list.append(col_name.strip('_Vg'))
     VTR_list.append(VTR)
     print(f"{label:35s}: VTON={VTON:.3f} V  VTOFF={VTOFF:.3f} V  "
             f"VTR={VTR:.3f} V  (method={det['method']}, "
@@ -119,6 +122,26 @@ for col_idx, col_name in enumerate(compiled_df.columns):
     except ImportError:
         pass
 
+    # Alternative VTR: Vg-separation between the 50%-of-max crossing of
+    # gm/Id and of the rising signal -- here rising falls back to plain gm
+    # (no CV/Cgg data for this device set), see extract_VTR_gm_gmid's
+    # docstring in new_TR_extraction_funs.py.
+    VTR_gm_gmid, det_gm_gmid = extract_VTR_gm_gmid(VGS, ID, ID_limit=2e-12, window_length=5)
+    VTR_gm_gmid_list.append(VTR_gm_gmid)
+    print(f"{'VTR from gm/Id, gm crossings':35s}: VTR_gm_gmid={VTR_gm_gmid:.3f} V  "
+          f"(VT_gm_over_id={det_gm_gmid['VT_gm_over_id']:.3f} V, "
+          f"VT_rising={det_gm_gmid['VT_rising']:.3f} V, rising={det_gm_gmid['rising_kind']})")
+
+    try:
+        gmid_norm_fname = f"{col_name.strip('_Vg')}_gm_and_gmid_norm.png"
+        gmid_norm_fpath = script_dir / "paper_data" / "dmp_plots" / gmid_norm_fname
+        plot_gm_and_gmid_norm(col_name.strip('_Vg'), VGS, det_gm_gmid,
+                               gmid_norm_fpath, f"{col_name.strip('_Vg')}: gm and gm/Id (normalized)",
+                               VTR_gm_gmid=VTR_gm_gmid, gm_gmid_details=det_gm_gmid)
+        print(f"    -> saved plot to {gmid_norm_fpath}\n")
+    except ImportError:
+        pass
+
 print(f"\nExtracted VTR values for {len(VTR_list)} devices: {[float(f'{VTR:.4f}') for VTR in VTR_list]}")
 # for idx, VTR in enumerate(VTR_list):
 #     print(f"Device {idx + 1}: VTR = {VTR:.3f} V")
@@ -129,6 +152,21 @@ print(f"\nExtracted VTR_deriv values for {len(VTR_deriv_list)} devices: "
       f"{[float(f'{v:.4f}') for v in VTR_deriv_list]}")
 stats_deriv = pd.Series(VTR_deriv_list).describe()
 print(stats_deriv)
+
+print(f"\nExtracted VTR_gm_gmid values for {len(VTR_gm_gmid_list)} devices: "
+      f"{[float(f'{v:.4f}') for v in VTR_gm_gmid_list]}")
+stats_gm_gmid = pd.Series(VTR_gm_gmid_list).describe()
+print(stats_gm_gmid)
+
+extracted_df = pd.DataFrame({
+    "device": device_list,
+    "VTR": VTR_list,
+    "VTR_deriv": VTR_deriv_list,
+    "VTR_gm_gmid": VTR_gm_gmid_list,
+})
+extracted_csv_path = script_dir / "ITO_t2nm_W100um_extracted.csv"
+extracted_df.to_csv(extracted_csv_path, index=False)
+print(f"\nSaved per-device extracted VTR values to {extracted_csv_path}")
 
 try:
     import matplotlib.pyplot as plt
@@ -155,5 +193,19 @@ try:
     fig.savefig(hist_path_deriv, dpi=150)
     plt.close(fig)
     print(f"Saved VTR_deriv histogram to {hist_path_deriv}")
+except ImportError:
+    pass
+
+try:
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    ax.hist(VTR_gm_gmid_list, bins=20, edgecolor="black")
+    ax.set_xlabel("VTR_gm_gmid (V)")
+    ax.set_ylabel("Count")
+    ax.set_title("Histogram of VTR_gm_gmid values")
+    hist_path_gm_gmid = fpath.parent / "VTR_gm_gmid_histogram.png"
+    fig.savefig(hist_path_gm_gmid, dpi=150)
+    plt.close(fig)
+    print(f"Saved VTR_gm_gmid histogram to {hist_path_gm_gmid}")
 except ImportError:
     pass

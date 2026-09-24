@@ -188,24 +188,45 @@ plot_gmid_gmcgg("OSFET", os_VGS, os_ID,
 # new_TR_extraction_funs.py (see their docstrings/comments there for the
 # gm/Id-trough vs gm/Cgg-rising-edge-centroid method and why).
 VTR_deriv_list = []
+VTR_gm_gmid_list = []
 
 si_VTR_deriv, si_det = extract_VTR_derivative(si_VGS, si_ID, si_Vg_cv, si_Cgg_cv)
+si_VTR_gm_gmid, si_det_gm_gmid = extract_VTR_gm_gmid(si_VGS, si_ID, si_Vg_cv, si_Cgg_cv)
+
+print(f"Si nFET: VTR from gm/Id and gm/Cgg crossings: {si_VTR_gm_gmid:.3f} V")
+
 plot_derivative_extrema("Si nFET", si_VGS, si_VTR_deriv, si_det,
                           data_dir / "Si_nFET_VTR_derivative.png",
                           "Si nFET: $d(g_m/I_D)/dV_G$ and $d(g_m/C_{GG})/dV_G$")
 plot_gm_and_gmid("Si nFET", si_VGS, si_det,
                   data_dir / "Si_nFET_gm_and_gmid.png",
                   "Si nFET: $g_m$ and $g_m/I_D$ vs $V_G$")
+plot_gm_and_gmid_norm("Si nFET", si_VGS, si_det,
+                      data_dir / "Si_nFET_gm_and_gmid_norm_gm_over_cgg.png",
+                      "Si nFET: $g_m/C_{GG}$ and $g_m/I_D$ vs $V_G$ (normalized)",
+                      VTR_gm_gmid=si_VTR_gm_gmid, gm_gmid_details=si_det_gm_gmid)
 VTR_deriv_list.append({"device": "Si nFET", "VTR_deriv": si_VTR_deriv,
                         "Vg_trough_gmid": si_det["Vg_trough"], "Vg_centroid_gmcgg": si_det["Vg_peak"]})
+VTR_gm_gmid_list.append({"device": "Si nFET", "VTR_gm_gmid": si_VTR_gm_gmid})
 
 os_VTR_deriv, os_det = extract_VTR_derivative(os_VGS, os_ID, os_Vg_cv, os_Cgg_cv)
+os_VTR_gm_gmid, os_det_gm_gmid = extract_VTR_gm_gmid(os_VGS, os_ID, os_Vg_cv, os_Cgg_cv)
+
+print(f"OSFET: VTR from gm/Id and gm/Cgg crossings: {os_VTR_gm_gmid:.3f} V")
+
 plot_derivative_extrema("OSFET", os_VGS, os_VTR_deriv, os_det,
                           data_dir / "OSFET_VTR_derivative.png",
                           "OSFET: $d(g_m/I_D)/dV_G$ and $d(g_m/C_{GG})/dV_G$")
 plot_gm_and_gmid("OSFET", os_VGS, os_det,
                   data_dir / "OSFET_gm_and_gmid.png",
                   "OSFET: $g_m$ and $g_m/I_D$ vs $V_G$")
+plot_gm_and_gmid_norm("OSFET", os_VGS, os_det,
+                      data_dir / "OSFET_gm_and_gmid_norm_gm_over_cgg.png",
+                      "OSFET: $g_m/C_{GG}$ and $g_m/I_D$ vs $V_G$ (normalized)",
+                      VTR_gm_gmid=os_VTR_gm_gmid, gm_gmid_details=os_det_gm_gmid)
+
+VTR_gm_gmid_list.append({"device": "OSFET", "VTR_gm_gmid": os_VTR_gm_gmid})
+
 VTR_deriv_list.append({"device": "OSFET", "VTR_deriv": os_VTR_deriv,
                         "Vg_trough_gmid": os_det["Vg_trough"], "Vg_centroid_gmcgg": os_det["Vg_peak"]})
 
@@ -216,6 +237,11 @@ print("\nVTR from derivative extrema (gm/Cgg rising-edge centroid - gm/Id trough
 print(VTR_deriv_df.to_string(index=False))
 print("\nFor comparison, VTR from extract_VTR (raw ID, subthreshold/above-threshold extrapolation):")
 print(extracted_df[["device", "file_name", "VTR"]].to_string(index=False))
+
+plot_gmid_gmcgg_product(
+    [("Si nFET", si_VGS, si_det), ("OSFET", os_VGS, os_det)],
+    data_dir / "Si_vs_OSFET_gmId_gmCgg_product.png",
+    "Si nFET vs OSFET: $(g_m/I_D)_{norm} \\times (g_m/C_{GG})_{norm}$ vs $V_G$")
 
 # ---------------------------------------------------------------------------
 # Excel export: raw sweeps + gm/Id, gm/Cgg diagnostics (one sheet per
@@ -228,6 +254,21 @@ print(extracted_df[["device", "file_name", "VTR"]].to_string(index=False))
 # extract_VTR_derivative only computes one "rising" variant per call.
 si_VTR_deriv_gm, si_det_gm = extract_VTR_derivative(si_VGS, si_ID)
 os_VTR_deriv_gm, os_det_gm = extract_VTR_derivative(os_VGS, os_ID)
+
+# Same "both versions of rising" split for extract_VTR_gm_gmid: the Cgg-based
+# pass (si_det_gm_gmid/os_det_gm_gmid, computed earlier) gives the gm/Cgg
+# rising crossing, this Cgg-free pass gives the plain-gm rising crossing.
+si_VTR_gm_gmid_gm, si_det_gm_gmid_gm = extract_VTR_gm_gmid(si_VGS, si_ID)
+os_VTR_gm_gmid_gm, os_det_gm_gmid_gm = extract_VTR_gm_gmid(os_VGS, os_ID)
+
+plot_gm_and_gmid_norm("Si nFET", si_VGS, si_det_gm,
+                      data_dir / "Si_nFET_gm_and_gmid_norm_gm.png",
+                      "Si nFET: $g_m$ and $g_m/I_D$ vs $V_G$ (normalized)",
+                      VTR_gm_gmid=si_VTR_gm_gmid_gm, gm_gmid_details=si_det_gm_gmid_gm)
+plot_gm_and_gmid_norm("OSFET", os_VGS, os_det_gm,
+                      data_dir / "OSFET_gm_and_gmid_norm_gm.png",
+                      "OSFET: $g_m$ and $g_m/I_D$ vs $V_G$ (normalized)",
+                      VTR_gm_gmid=os_VTR_gm_gmid_gm, gm_gmid_details=os_det_gm_gmid_gm)
 
 
 def _device_sheet(VGS, ID, Vg_cv, Cgg_cv, det, det_gm):
@@ -253,17 +294,31 @@ def _device_sheet(VGS, ID, Vg_cv, Cgg_cv, det, det_gm):
     return pd.concat(cols, axis=1)
 
 
-def _summary_row(device, VTON, VTOFF, VTR, det, det_gm):
+def _summary_row(device, VTON, VTOFF, VTR, det_lin, det, det_gm,
+                  VTR_gm_gmid, det_gm_gmid, VTR_gm_gmid_gm, det_gm_gmid_gm):
     return {
         "device": device,
         "VTON (V)": VTON,
         "VTOFF (V)": VTOFF,
         "VTR (V)": VTR,
+        "ID0 (A)": det_lin["ID0"],
+        "idx_off": det_lin["idx_off"],
+        "idx_on": det_lin["idx_on"],
+        "off_slope": det_lin["off_fit"][0],
+        "on_slope": det_lin["on_fit"][0],
+        "off_intercept": det_lin["off_fit"][1],
+        "on_intercept": det_lin["on_fit"][1],
+        "on_ylabel": det_lin["on_ylabel"],
         "VTR_deriv_gm_over_cgg (V)": det["Vg_peak"] - det["Vg_trough"],
         "VTR_deriv_gm (V)": det_gm["Vg_peak"] - det_gm["Vg_trough"],
         "VT_gm_by_id (V)": det["Vg_trough"],
         "VT_gm_by_cgg (V)": det["Vg_peak"],
         "VT_gm (V)": det_gm["Vg_peak"],
+        "VTR_gm_gmid_gm_over_cgg (V)": VTR_gm_gmid,
+        "VTR_gm_gmid_gm (V)": VTR_gm_gmid_gm,
+        "VT_rising_by_cgg_norm (V)": det_gm_gmid["VT_rising"],
+        "VT_rising_by_gm_norm (V)": det_gm_gmid_gm["VT_rising"],
+        "VT_gm_over_id_norm (V)": det_gm_gmid["VT_gm_over_id"],
         "window_length": common_kwargs["window_length"],
         "polyorder": 3,
         "npts_fit": common_kwargs["npts_fit"],
@@ -278,8 +333,10 @@ def _summary_row(device, VTON, VTOFF, VTR, det, det_gm):
 
 
 summary_df = pd.DataFrame([
-    _summary_row("Si nFET", si_VTON_lin, si_VTOFF_lin, si_VTR_lin, si_det, si_det_gm),
-    _summary_row("OSFET", os_VTON_lin, os_VTOFF_lin, os_VTR_lin, os_det, os_det_gm),
+    _summary_row("Si nFET", si_VTON_lin, si_VTOFF_lin, si_VTR_lin, si_det_lin, si_det, si_det_gm,
+                 si_VTR_gm_gmid, si_det_gm_gmid, si_VTR_gm_gmid_gm, si_det_gm_gmid_gm),
+    _summary_row("OSFET", os_VTON_lin, os_VTOFF_lin, os_VTR_lin, os_det_lin, os_det, os_det_gm,
+                 os_VTR_gm_gmid, os_det_gm_gmid, os_VTR_gm_gmid_gm, os_det_gm_gmid_gm),
 ])
 
 excel_path = script_dir / "compare_Si_vs_ITO_data.xlsx"

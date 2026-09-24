@@ -1301,6 +1301,182 @@ def extract_VTR_derivative(VGS, ID, Vg_cv=None, Cgg_cv=None, ID_limit=2e-12,
                     Vg_trough=Vg_trough, Vg_peak=Vg_peak)
     return VTR_deriv, details
 
+def _find_crossing(x, y, ref):
+    """First x (ascending) at which y crosses ref, linearly interpolated
+    between the two bracketing samples."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    finite = np.isfinite(x) & np.isfinite(y)
+    x, y = x[finite], y[finite]
+    d = y - ref
+    sign_change = np.where(np.diff(np.sign(d)) != 0)[0]
+    if len(sign_change) == 0:
+        return np.nan
+    i = sign_change[0]
+    x0, x1 = x[i], x[i + 1]
+    d0, d1 = d[i], d[i + 1]
+    if d1 == d0:
+        return x0
+    return x0 + (0 - d0) * (x1 - x0) / (d1 - d0)
+
+
+def extract_VTR_gm_gmid(VGS, ID, Vg_cv=None, Cgg_cv=None, ID_limit=2e-12,
+                        window_length=5, polyorder=3, slope_window=None,
+                        edge_margin=None, gmid_edge_margin=None,
+                        ref_frac=0.5):
+    VGS = np.asarray(VGS, dtype=float)
+    n = len(VGS)
+    gm, gm_over_id, rising, rising_kind, valid = compute_gmid_gmcgg(
+        VGS, ID, Vg_cv, Cgg_cv, ID_limit, window_length, polyorder)
+
+    sw = slope_window if slope_window is not None else _odd(max(3 * window_length, n // 8))
+
+    VGS_v = VGS[valid]
+    gm_norm = gm / np.nanmax(gm)
+    rising_norm = rising / np.nanmax(rising)
+    gm_over_id_norm = gm_over_id / np.nanmax(gm_over_id)
+
+    VT_gm = _find_crossing(VGS_v, gm_norm[valid], ref_frac)
+    VT_rising = _find_crossing(VGS_v, rising_norm[valid], ref_frac)
+    VT_gm_over_id = _find_crossing(VGS_v, gm_over_id_norm[valid], ref_frac)
+    VTR_gm_gmid = VT_rising - VT_gm_over_id
+
+    details = dict(gm=gm, gm_over_id=gm_over_id,
+                    gm_norm=gm_norm, rising_norm=rising_norm, gm_over_id_norm=gm_over_id_norm,
+                    rising=rising, rising_kind=rising_kind, valid=valid,
+                    VT_gm=VT_gm, VT_rising=VT_rising, VT_gm_over_id=VT_gm_over_id)
+    return VTR_gm_gmid, details
+
+_RISING_LABELS_NORM = {
+    "gm_over_cgg": "$g_m/C_{GG}$",
+    "gm": "$g_m$",
+}
+
+
+def plot_gm_and_gmid_norm(device, VGS, details_or_ID, savepath, title, ID_limit=2e-12,
+                      window_length=5, polyorder=3, VTR_gm_gmid=None, gm_gmid_details=None):
+    """
+    Diagnostic plot: the "rising" signal (right, dashed -- gm/Cgg if a CV
+    sweep was supplied upstream, else plain gm) and gm/Id (left, solid) vs
+    Vg, both normalized to their max -- the two curves that feed
+    extract_VTR_gm_gmid. Useful when d(gm/Id)/dVg itself looks noisy or
+    multi-lobed (a kink or shoulder in the rising curve, or a plateau/wiggle
+    in gm/Id, shows up directly here rather than being buried in a second
+    level of differencing).
+
+    `details_or_ID` accepts EITHER the `details` dict already returned by
+    extract_VTR_derivative/extract_VTR_gm_gmid (reuses its gm_over_id/
+    rising/rising_kind, no recomputation) OR a raw ID array (computes
+    gm_over_id/rising fresh, e.g. for standalone use -- always plain gm in
+    that case, since there's no Cgg sweep to pass in).
+
+    Calling this once with Cgg-derived details and once with Cgg-free
+    details (as extract_VTR_derivative's si_det/si_det_gm pattern does)
+    gives the two "rising" variants -- gm/Cgg-based and plain-gm-based.
+
+    If `VTR_gm_gmid`/`gm_gmid_details` (the outputs of extract_VTR_gm_gmid)
+    are supplied, the VT_rising / VT_gm_over_id crossings are marked with
+    vertical lines (and the ref_frac threshold with a horizontal line), with
+    VTR_gm_gmid annotated in the title.
+    """
+
+    import matplotlib.pyplot as plt
+
+    if isinstance(details_or_ID, dict):
+        gm_over_id = details_or_ID["gm_over_id"]
+        rising, rising_kind = details_or_ID["rising"], details_or_ID["rising_kind"]
+    else:
+        _, gm_over_id, rising, rising_kind, _ = compute_gmid_gmcgg(
+            VGS, details_or_ID, ID_limit=ID_limit,
+            window_length=window_length, polyorder=polyorder)
+
+    fig, ax_l = plt.subplots(figsize=(6.5, 4.5))
+    ax_r = ax_l.twinx()
+
+    max_gm_over_id = np.nanmax(gm_over_id)
+    if max_gm_over_id > 0:
+        gm_over_id_norm = gm_over_id / max_gm_over_id
+
+    max_rising = np.nanmax(rising)
+    if max_rising > 0:
+        rising_norm = rising / max_rising
+
+    ax_l.plot(VGS, gm_over_id_norm, color=COLOR_GM_ID, lw=2, zorder=3)
+    ax_r.plot(VGS, rising_norm, color=COLOR_GM_CGG, lw=2, linestyle="--", dashes=(5, 3), zorder=3)
+
+    ax_l.set_xlabel("$V_G$ (V)")
+    ax_l.set_ylabel("$g_m/I_D$  (normalized)   [solid]", color=COLOR_GM_ID)
+    ax_r.set_ylabel(f"{_RISING_LABELS_NORM[rising_kind]}  (normalized)   [dashed]", color=COLOR_GM_CGG)
+    if gm_gmid_details is not None:
+        VT_gm_over_id = gm_gmid_details["VT_gm_over_id"]
+        VT_rising = gm_gmid_details["VT_rising"]
+        rising_label = _RISING_LABELS_NORM[rising_kind].strip("$")
+        ref_line = ax_l.axhline(0.5, color="gray", ls=":", lw=2, zorder=1, label="50% ref")
+        gmid_line = ax_l.axvline(VT_gm_over_id, color=COLOR_GM_ID, ls=":", lw=2,
+                                  label=f"$V_{{T,g_m/I_D}}$ = {VT_gm_over_id:.3f} V")
+        rising_line = ax_r.axvline(VT_rising, color=COLOR_GM_CGG, ls=":", lw=2,
+                                    label=f"$V_{{T,{rising_label}}}$ = {VT_rising:.3f} V")
+        ax_l.legend(handles=[gmid_line, rising_line, ref_line], fontsize=8, loc="best")
+        ax_l.set_title(f"{title}\n$V_{{TR}}$ = {VTR_gm_gmid:.3f} V")
+    else:
+        ax_l.set_title(title)
+    style_axes(ax_l)
+    ax_l.tick_params(axis="y", colors=COLOR_GM_ID)
+    ax_l.spines["left"].set_color(COLOR_GM_ID)
+    ax_r.grid(False)
+    for side in ("top", "left"):
+        ax_r.spines[side].set_visible(False)
+    ax_r.spines["right"].set_color(COLOR_GM_CGG)
+    ax_r.tick_params(axis="y", colors=COLOR_GM_CGG)
+
+    fig.tight_layout()
+    fig.savefig(savepath, dpi=150)
+    plt.close(fig)
+    print_file(f"Saved {device} gm & gm/Id plot to {savepath}")
+
+
+def plot_gmid_gmcgg_product(device_data, savepath, title, ID_limit=2e-12,
+                             window_length=5, polyorder=3):
+    """Single-axis plot overlaying, for each device, (gm/Id)_norm * (gm/Cgg
+    or gm)_norm vs Vg -- each curve normalized to its own max BEFORE
+    multiplying, so the product highlights where a device is simultaneously
+    efficient (high gm/Id) and fast (high gm/Cgg or gm), useful for
+    comparing multiple devices (e.g. Si vs ITO) on one axis.
+
+    `device_data` is a list of (device_name, VGS, details_or_ID) tuples.
+    `details_or_ID` accepts EITHER the `details` dict already returned by
+    extract_VTR_derivative/extract_VTR_gm_gmid (reuses its gm_over_id/
+    rising, no recomputation) OR a raw ID array (computes them fresh, e.g.
+    for standalone use -- always plain gm in that case)."""
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(6.5, 4.5))
+
+    for device, VGS, details_or_ID in device_data:
+        if isinstance(details_or_ID, dict):
+            gm_over_id, rising = details_or_ID["gm_over_id"], details_or_ID["rising"]
+        else:
+            _, gm_over_id, rising, _, _ = compute_gmid_gmcgg(
+                VGS, details_or_ID, ID_limit=ID_limit,
+                window_length=window_length, polyorder=polyorder)
+
+        gm_over_id_norm = gm_over_id / np.nanmax(gm_over_id)
+        rising_norm = rising / np.nanmax(rising)
+        product = gm_over_id_norm * rising_norm
+
+        ax.plot(VGS, product, lw=2, label=device)
+
+    ax.set_xlabel("$V_G$ (V)")
+    ax.set_ylabel(r"$(g_m/I_D)_{norm} \times (g_m/C_{GG})_{norm}$")
+    ax.set_title(title)
+    style_axes(ax)
+    ax.legend(fontsize=9)
+
+    fig.tight_layout()
+    fig.savefig(savepath, dpi=150)
+    plt.close(fig)
+    print_file(f"Saved gm/Id x rising product plot to {savepath}")
+
 
 def plot_derivative_extrema(device, VGS, VTR_deriv, details, savepath, title):
     """Diagnostic plot for extract_VTR_derivative: d(gm/Id)/dVg (left, solid)

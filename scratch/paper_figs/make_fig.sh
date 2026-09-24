@@ -1,1 +1,1 @@
-xvfb-run -a matlab -nosplash -nodesktop -r "try, ${1}_gen; fig_to_png('$1'); catch e, disp(getReport(e)); end; exit"
+xvfb-run -a matlab -batch "run('${1}_gen.m'); fig_to_png('${1}.fig')"
